@@ -92,12 +92,12 @@ class Serial extends SerialException
 
     protected function canRead(): bool
     {
-        return $this->mode === self::MODE_READ || $this->mode === self::MODE_READWRITE;
+        return $this->getWrapper()->getMode() === self::MODE_READ || $this->getWrapper()->getMode() === self::MODE_READWRITE;
     }
 
     protected function canWrite(): bool
     {
-        return $this->mode === self::MODE_WRITE || $this->mode === self::MODE_READWRITE;
+        return $this->getWrapper()->getMode() === self::MODE_WRITE || $this->getWrapper()->getMode() === self::MODE_READWRITE;
     }
 
     /**
