@@ -7,49 +7,61 @@ Example of a simple "Hello World!" message, with a callback, sent througt /dev/t
 The callback function is called if the ```Serial::write()``` method is successful.
 
 ```
-use \Serial\Serial;
-use \Serial\SerialException;
-use \Serial\SerialMessage;
-
 class SerialExample
 {
-    protected $serial;
+    public $serial;
 
     public function __construct()
     {
-        $message = (new SerialMessage('Hello World!'))
-            ->setCallback([$this, 'HWSent'])
-            ->setWaitForReply(0.1);
-
         try {
-            $this->serial = (new Serial('/dev/ttyS0', '9600', '8/N/1'))
-                ->openDevice()
-                ->write($message);
+            $this->serial = (new Serial('/dev/ttyUSB0', '9600', '8/N/1'))
+                ->setVerboseCallback([$this, 'cbLogs']);
 
-            $answer = $this->serial->read();
+            $this->sendThisFile();
 
-            $this->serial->closeDevice();
         } catch (SerialException $except) {
             echo $except->getMessage();
         }
     }
 
-    public function HWSent()
+    public function sendThisFile()
     {
-        echo 'Hello World sent...';
+        $message = (new SerialMessage(file_get_contents(__FILE__)))
+            ->setCallback([$this, 'cbSendThisFile']);
+
+        $this->serial->write($message);
     }
 
+    public function cbLogs(SerialLog $log)
+    {
+        printf("\t%s\t\t%s%s", $log->getLevelName(), $log->getMessage(), PHP_EOL);
+
+    }
+
+    public function cbSendThisFile()
+    {
+        echo 'File sent...'.PHP_EOL;
+    }
 }
 
-$example = new SerialExample;
+try {
+    $example = new SerialExample;
+} catch (SerialException $se) {
+    echo $se->getMessage();
+}
 ```
 
 ## Serial options
  - Device
- - Speed (Bauds)
+ - Speed (_Bauds_)
  - Data bits
  - Parity mode
  - Stop bits
  - Handshake mode
  - Serial port access (R/W)
 
+## Message option
+ - Content
+ - Callback function
+   - Synchronous
+   - Wait

@@ -23,9 +23,11 @@ class Serial extends SerialException
 
     protected $autoflush = true;
     protected $buffer = '';
+    protected $logs;
     protected $readLength = 128;
     protected $deviceHandle = null;
     protected $deviceState = self::DEVICE_NOTSET;
+    protected $verboseCallback = null;
     protected $wrapper = null;
 
     /**
@@ -36,6 +38,8 @@ class Serial extends SerialException
      */
     public function __construct(string $device = null, int $speed = 9600, string $bps = '8/N/1')
     {
+        $this->logs = new \SplObjectStorage;
+
         $this->registerWrapper();
 
         !is_null($device) and $this->setDevice($device);
@@ -92,12 +96,88 @@ class Serial extends SerialException
 
     protected function canRead(): bool
     {
-        return $this->mode === self::MODE_READ || $this->mode === self::MODE_READWRITE;
+        return $this->getWrapper()->getMode() === self::MODE_READ || $this->getWrapper()->getMode() === self::MODE_READWRITE;
     }
 
     protected function canWrite(): bool
     {
-        return $this->mode === self::MODE_WRITE || $this->mode === self::MODE_READWRITE;
+        return $this->getWrapper()->getMode() === self::MODE_WRITE || $this->getWrapper()->getMode() === self::MODE_READWRITE;
+    }
+
+    protected function addLog(SerialLog $log)
+    {
+        $this->logs->attach($log);
+
+        if (\is_callable($this->getVerboseCallback())) {
+            $this->getVerboseCallback()($log);
+        }
+    }
+
+    /**
+     * Get logs
+     *
+     * @return \SplObjectStorage
+     */
+    public function getLogs(): \SplObjectStorage
+    {
+        return $this->logs;
+    }
+
+    /**
+     * Get last Nth logs
+     *
+     * @param integer $nth Number of log objects
+     * @return \SplObjectStorage
+     */
+    public function getNthLogs(int $nth): \SplObjectStorage
+    {
+        $count = $this->logs->count();
+
+        if ($nth >= $count) {
+            return $this->logs;
+        }
+
+        $start = $count - $nth;
+        $returnLogs = new \SplObjectStorage;
+        $clonedLogs = clone $this->logs;
+
+        $clonedLogs->rewind();
+
+        do {
+            if ($clonedLogs->key() >= $start) {
+                $returnLogs->attach($clonedLogs->current());
+            }
+
+            $clonedLogs->next();
+        } while ($clonedLogs->valid());
+
+        unset($clonedLogs);
+
+        return $returnLogs;
+    }
+
+    /**
+     * Get function to send log to
+     *
+     * @param callable $callback Function
+     * @return callable|null
+     */
+    public function getVerboseCallback(callable $callback = null): ?callable
+    {
+        return $this->verboseCallback;
+    }
+
+    /**
+     * Set function to send log to
+     *
+     * @param callable $callback Function
+     * @return callable|null
+     */
+    public function setVerboseCallback(callable $callback = null): self
+    {
+        $this->verboseCallback = $callback;
+
+        return $this;
     }
 
     /**
@@ -305,7 +385,7 @@ class Serial extends SerialException
      * @param float $stopBits Length of a stop bit
      * @return bool
      */
-    function setStopBits(float $stopBits): self
+    public function setStopBits(float $stopBits): self
     {
         if ($this->isDeviceOpened()) {
             throw new SerialException('Device already opened, unable to change stop bits.');
@@ -323,11 +403,17 @@ class Serial extends SerialException
         return $this;
     }
 
-    public function getReadLength(): int
+    protected function getReadLength(): int
     {
         return $this->readLength;
     }
 
+    /**
+     * Set buffer read length
+     *
+     * @param integer $readLength Length
+     * @return void
+     */
     public function setReadLength(int $readLength = 128)
     {
         $this->readLength = $readLength;
@@ -343,7 +429,7 @@ class Serial extends SerialException
     }
 
     /**
-     * Get the wrapper
+     * Get the platform wrapper
      *
      * @return Wrapper|null
      */
@@ -352,15 +438,19 @@ class Serial extends SerialException
         return $this->wrapper;
     }
 
-    /**
-     * Flush the buffer
-     *
-     * @return self
-     */
-    protected function flushBuffer(): self
+    protected function microtimeDiff(float $from): string
     {
-        if (!$this->isDeviceOpened()) {
-            throw new SerialException('Can\'t flush data: device not opened.');
+        return round(\microtime(true)-$from, 2);
+    }
+
+    protected function flushBuffer(): bool
+    {
+        $this->addLog(new SerialLog('Flushing buffer...'));
+
+        $this->openDevice();
+
+        if (!$this->canWrite()) {
+            throw new SerialException('Device can\'t be written: not allowed.');
         }
 
         if (@fwrite($this->getDeviceHandle(), $this->buffer) === false) {
@@ -369,7 +459,7 @@ class Serial extends SerialException
 
         $this->buffer = '';
 
-        return $this;
+        return true;
     }
 
     /**
@@ -379,6 +469,8 @@ class Serial extends SerialException
      */
     public function openDevice(): self
     {
+        $this->addLog(new SerialLog('Opening device...'));
+
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be opened: not set.');
         }
@@ -400,15 +492,17 @@ class Serial extends SerialException
         $this->setDeviceHandle(@fopen($this->getWrapper()->getDevice(), $this->getWrapper()->getMode()));
 
         if ($this->getDeviceHandle() === false) {
+            $this->addLog(new SerialLog($this->wrapper->getOpenError(), LOG_ERR));
             $this->setDeviceHandle();
+
             throw new SerialException('Unable to open the device: '.$this->wrapper->getOpenError());
         }
 
         register_shutdown_function([$this, 'closeDevice']);
 
-        stream_set_blocking($this->getDeviceHandle(), false);
-
         $this->deviceState = self::DEVICE_OPENED;
+
+        $this->addLog(new SerialLog('Device opened.'));
 
         return $this;
     }
@@ -418,28 +512,23 @@ class Serial extends SerialException
      *
      * @return self
      */
-    public function closeDevice(): self
+    public function closeDevice(): bool
     {
-        if ($this->isDeviceNotSet()) {
-            throw new SerialException('Device can\t be closed: not set.');
-        }
-
         if ($this->isDeviceClosed()) {
-            throw new SerialException('Device already closed.');
+            return true;
         }
 
-        if (!$this->isDeviceOpened()) {
-            throw new SerialException('Device can\'t be closed: not opened.');
-        }
+        $this->addLog(new SerialLog('Wait for freeing device...'));
 
         if (@fclose($this->getDeviceHandle()) === false) {
-            throw new SerialException('Unable to close the device.');
+            return false;
         }
 
-        $this->setDeviceHandle(null);
         $this->deviceState = self::DEVICE_CLOSED;
 
-        return $this;
+        $this->addLog(new SerialLog('Device closed.'));
+
+        return true;
     }
 
     /**
@@ -450,9 +539,11 @@ class Serial extends SerialException
      */
     public function read($length = 0): string
     {
-        if ($this->isDeviceNotSet()) {
-            throw new SerialException('Device can\t be read: not set.');
-        }
+        $start = \microtime(true);
+
+        $this->addLog(new SerialLog("Reading {$length} bytes..."));
+
+        $this->openDevice();
 
         if ($this->isDeviceClosed()) {
             throw new SerialException('Device is closed.');
@@ -467,18 +558,24 @@ class Serial extends SerialException
         }
 
         $content = '';
-        $length = $this->getReadLength();
+        $readLength = $this->getReadLength();
         $loop = 0;
 
         do {
-            if ($count !== 0) {
-                $length = ($loop > $count)
-                    ? ($count - $loop)
+            $this->addLog(new SerialLog("Read loop {$loop}..."));
+
+            if ($length !== 0) {
+                $readLength = ($loop > $length)
+                    ? ($length - $loop)
                     : $this->getReadLength();
             }
 
-            $content.= fread($this->getDeviceHandle(), $length);
+            $content.= fread($this->getDeviceHandle(), $readLength);
         } while (($loop += $this->getReadLength()) === strlen($content));
+
+        if ($this->closeDevice()) {
+            $this->addLog(new SerialLog("Read in ".$this->microtimeDiff($start).'s.'));
+        }
 
         return $content;
     }
@@ -491,20 +588,12 @@ class Serial extends SerialException
      */
     public function write(SerialMessage $message): self
     {
+        $start = \microtime(true);
+
+        $this->addLog(new SerialLog('Writing...'));
+
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be written: not set.');
-        }
-
-        if ($this->isDeviceClosed()) {
-            throw new SerialException('Device is closed.');
-        }
-
-        if (!$this->isDeviceOpened()) {
-            throw new SerialException('Device can\'t be written: not opened.');
-        }
-
-        if (!$this->canWrite()) {
-            throw new SerialException('Device can\'t be written: not allowed.');
         }
 
         $this->buffer.= $message->getContent();
@@ -512,14 +601,38 @@ class Serial extends SerialException
         if ($this->autoflush === true) {
             $this->flushBuffer();
 
-            if (\is_callable($message->getCallback())) {
-                \call_user_func($message->getCallback());
+            if (!$message->isSynchronous()) {
+                $this->writeCallback($message);
+            }
+
+            $this->closeDevice();
+            $this->addLog(new SerialLog("Sent in ".$this->microtimeDiff($start).'s'));
+
+            if ($message->isSynchronous()) {
+                $this->writeCallback($message);
             }
         }
 
-        usleep(intval(($message->getWaitForReply() * 1000)));
+        $this->closeDevice();
 
         return $this;
+    }
+
+    protected function writeCallback(SerialMessage $message)
+    {
+        if (!\is_callable($message->getCallback())) {
+            return true;
+        }
+
+        if ($message->getWaitForCallback() > 0) {
+            $this->addLog(new SerialLog('Wait before write callback '.round($message->getWaitForCallback()/1000, 2).'s...'));
+
+            usleep(intval(($message->getWaitForCallback() * 1000)));
+        }
+
+        $this->addLog(new SerialLog('Calling write callback function: '.$message->getCallback()[1].'()'));
+
+        \call_user_func($message->getCallback());
     }
 
 }

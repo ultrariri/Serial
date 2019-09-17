@@ -1,0 +1,15 @@
+{
+    "name": "ultrariri/Serial",
+    "description": "Serial port communication module",
+    "type": "library",
+    "license": "gpl",
+    "authors": [
+        {
+            "name": "Thierry Leroux",
+            "email": "ultrabill@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.1"
+    }
+}
