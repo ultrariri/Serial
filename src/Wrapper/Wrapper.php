@@ -38,7 +38,7 @@ abstract class Wrapper implements IWrapper
         return $returnCode;
     }
 
-    protected function setOpenError(string $stdOut, string $stdErr): self
+    protected function setOpenError(string $stdOut = null, string $stdErr = null): self
     {
         $this->openError = $stdErr;
 
