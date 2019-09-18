@@ -27,6 +27,7 @@ class Serial extends SerialException
     protected $readLength = 128;
     protected $deviceHandle = null;
     protected $deviceState = self::DEVICE_NOTSET;
+    protected $verboseCallback = null;
     protected $wrapper = null;
 
     /**
@@ -106,6 +107,10 @@ class Serial extends SerialException
     protected function addLog(SerialLog $log)
     {
         $this->logs->attach($log);
+
+        if (\is_callable($this->getVerboseCallback())) {
+            $this->getVerboseCallback()($log);
+        }
     }
 
     /**
@@ -149,6 +154,18 @@ class Serial extends SerialException
         unset($clonedLogs);
 
         return $returnLogs;
+    }
+
+    public function getVerboseCallback(callable $callback = null): ?callable
+    {
+        return $this->verboseCallback;
+    }
+
+    public function setVerboseCallback(callable $callback = null): self
+    {
+        $this->verboseCallback = $callback;
+
+        return $this;
     }
 
     /**
@@ -509,7 +526,7 @@ class Serial extends SerialException
      */
     public function read($length = 0): string
     {
-        $this->addLog(new SerialLog("Read {$length} bytes."));
+        $this->addLog(new SerialLog("Reading {$length} bytes."));
 
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be read: not set.');
@@ -532,7 +549,7 @@ class Serial extends SerialException
         $loop = 0;
 
         do {
-            $this->addLog(new SerialLog("Reading {$loop}..."));
+            $this->addLog(new SerialLog("Read loop {$loop}..."));
 
             if ($length !== 0) {
                 $readLength = ($loop > $length)
@@ -578,10 +595,12 @@ class Serial extends SerialException
             $this->flushBuffer();
 
             $this->addLog(new SerialLog('Wait for reply...'));
+
             usleep(intval(($message->getWaitForReply() * 1000)));
 
             if (\is_callable($message->getCallback())) {
-                $this->addLog(new SerialLog('Calling write callback function.'));
+                $this->addLog(new SerialLog('Calling write callback function: '.$message->getCallback()[1].'()'));
+
                 \call_user_func($message->getCallback());
             }
         }
