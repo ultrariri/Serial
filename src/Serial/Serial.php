@@ -467,17 +467,17 @@ class Serial extends SerialException
         }
 
         $content = '';
-        $length = $this->getReadLength();
+        $readLength = $this->getReadLength();
         $loop = 0;
 
         do {
-            if ($count !== 0) {
-                $length = ($loop > $count)
-                    ? ($count - $loop)
+            if ($length !== 0) {
+                $readLength = ($loop > $length)
+                    ? ($length - $loop)
                     : $this->getReadLength();
             }
 
-            $content.= fread($this->getDeviceHandle(), $length);
+            $content.= fread($this->getDeviceHandle(), $readLength);
         } while (($loop += $this->getReadLength()) === strlen($content));
 
         return $content;
@@ -512,12 +512,12 @@ class Serial extends SerialException
         if ($this->autoflush === true) {
             $this->flushBuffer();
 
+            usleep(intval(($message->getWaitForReply() * 1000)));
+
             if (\is_callable($message->getCallback())) {
                 \call_user_func($message->getCallback());
             }
         }
-
-        usleep(intval(($message->getWaitForReply() * 1000)));
 
         return $this;
     }
