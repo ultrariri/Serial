@@ -4,6 +4,7 @@ require_once __DIR__.'/../Bootstrap.php';
 
 use \Serial\Serial;
 use \Serial\SerialException;
+use \Serial\SerialLog;
 use \Serial\SerialMessage;
 
 class SerialExample
@@ -12,19 +13,34 @@ class SerialExample
 
     public function __construct()
     {
-        $message = (new SerialMessage(file_get_contents(__FILE__)))
-            ->setCallback([$this, 'HWSent'])
-            ->setWaitForReply(2000);
-
         try {
-            $this->serial = (new Serial('/dev/ttyUSB0', '9600', '8/N/1'))
-                ->openDevice()
-                ->write($message);
+            $this->serial = (new Serial('/dev/ttyUSB0', '4800', '8/N/1'))
+                ->setVerboseCallback([$this, 'logs']);
 
-            $answer = $this->serial->read(256);
+            $this->sendHelloWorld();
+            $this->sendThisFile();
+
         } catch (SerialException $except) {
             echo $except->getMessage();
         }
+    }
+
+    public function sendHelloWorld()
+    {
+        $message = (new SerialMessage('Hello Worl!'))
+            ->setCallback([$this, 'HWSent'])
+            ->setWaitForReply(2000);
+
+        $this->getSerial()->write($message);
+    }
+
+    public function sendThisFile()
+    {
+        $message = (new SerialMessage(file_get_contents(__FILE__)))
+            ->setCallback([$this, 'FileSent'])
+            ->setWaitForReply(2000);
+
+        $this->getSerial()->write($message);
     }
 
     public function getSerial(): Serial
@@ -34,19 +50,24 @@ class SerialExample
 
     public function HWSent()
     {
-        echo 'Hello World sent...';
+        echo 'Hello World sent...'.PHP_EOL;
+    }
+
+    public function FileSent()
+    {
+        echo 'File sent...'.PHP_EOL;
+    }
+
+    public function logs(SerialLog $log)
+    {
+        printf("\t%s\t\t%s%s", $log->getLevelName(), $log->getMessage(), PHP_EOL);
+
     }
 
 }
 
 try {
     $example = new SerialExample;
-
-    foreach ($example->getSerial()->getLogs() as $message) {
-        printf("%s\t\t%s%s", $message->getTime(), $message->getMessage(), PHP_EOL);
-    }
 } catch (SerialException $se) {
     echo $se->getMessage();
-} catch (Error $e) {
-    echo $e->getMessage();
 }
