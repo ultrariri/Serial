@@ -4,13 +4,25 @@ namespace Serial;
 
 class SerialMessage
 {
+    protected $callback = null;
     protected $content = null;
     protected $waitForReply = 0.1;
-    protected $callback = null;
 
     public function __construct($content)
     {
         $this->setContent($content);
+    }
+
+    public function getCallback(): ?callable
+    {
+        return $this->callback;
+    }
+
+    public function setCallback(callable $callback): self
+    {
+        $this->callback = $callback;
+
+        return $this;
     }
 
     public function getContent(): ?string
@@ -37,15 +49,4 @@ class SerialMessage
         return $this;
     }
 
-    public function getCallback(): ?callable
-    {
-        return $this->callback;
-    }
-
-    public function setCallback(callable $callback): self
-    {
-        $this->callback = $callback;
-
-        return $this;
-    }
 }
