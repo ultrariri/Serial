@@ -420,14 +420,21 @@ class Serial extends SerialException
         return $this->wrapper;
     }
 
+    protected function microtimeDiff(float $from): string
+    {
+        return round(\microtime(true)-$from, 2);
+    }
+
     /**
      * Flush the buffer
      *
      * @return self
      */
-    protected function flushBuffer(): self
+    protected function flushBuffer(): bool
     {
-        $this->addLog(new SerialLog('Flush buffer.'));
+        $start = \microtime(true);
+
+        $this->addLog(new SerialLog('Flushing buffer...'));
 
         if (!$this->isDeviceOpened()) {
             throw new SerialException('Can\'t flush data: device not opened.');
@@ -439,7 +446,11 @@ class Serial extends SerialException
 
         $this->buffer = '';
 
-        return $this;
+        if ($this->closeDevice()) {
+            $this->addLog(new SerialLog("Sent in ".$this->microtimeDiff($start).'s'));
+        }
+
+        return true;
     }
 
     /**
@@ -449,7 +460,7 @@ class Serial extends SerialException
      */
     public function openDevice(): self
     {
-        $this->addLog(new SerialLog('Open device for communication.'));
+        $this->addLog(new SerialLog('Opening device...'));
 
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be opened: not set.');
@@ -480,9 +491,9 @@ class Serial extends SerialException
 
         register_shutdown_function([$this, 'closeDevice']);
 
-        stream_set_blocking($this->getDeviceHandle(), false);
-
         $this->deviceState = self::DEVICE_OPENED;
+
+        $this->addLog(new SerialLog('Device opened.'));
 
         return $this;
     }
@@ -492,30 +503,23 @@ class Serial extends SerialException
      *
      * @return self
      */
-    public function closeDevice(): self
+    public function closeDevice(): bool
     {
-        $this->addLog(new SerialLog('Close device.'));
-
-        if ($this->isDeviceNotSet()) {
-            throw new SerialException('Device can\t be closed: not set.');
-        }
-
         if ($this->isDeviceClosed()) {
-            throw new SerialException('Device already closed.');
+            return true;
         }
 
-        if (!$this->isDeviceOpened()) {
-            throw new SerialException('Device can\'t be closed: not opened.');
-        }
+        $this->addLog(new SerialLog('Closing device...'));
 
         if (@fclose($this->getDeviceHandle()) === false) {
-            throw new SerialException('Unable to close the device.');
+            return false;
         }
 
-        $this->setDeviceHandle(null);
         $this->deviceState = self::DEVICE_CLOSED;
 
-        return $this;
+        $this->addLog(new SerialLog('Device closed.'));
+
+        return true;
     }
 
     /**
@@ -526,7 +530,11 @@ class Serial extends SerialException
      */
     public function read($length = 0): string
     {
-        $this->addLog(new SerialLog("Reading {$length} bytes."));
+        $start = \microtime(true);
+
+        $this->addLog(new SerialLog("Reading {$length} bytes..."));
+
+        $this->openDevice();
 
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be read: not set.');
@@ -560,6 +568,10 @@ class Serial extends SerialException
             $content.= fread($this->getDeviceHandle(), $readLength);
         } while (($loop += $this->getReadLength()) === strlen($content));
 
+        if ($this->closeDevice()) {
+            $this->addLog(new SerialLog("Read in ".$this->microtimeDiff($start).'s.'));
+        }
+
         return $content;
     }
 
@@ -571,7 +583,9 @@ class Serial extends SerialException
      */
     public function write(SerialMessage $message): self
     {
-        $this->addLog(new SerialLog('Write to device.'));
+        $this->addLog(new SerialLog('Writing to device...'));
+
+        $this->openDevice();
 
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be written: not set.');
@@ -594,7 +608,7 @@ class Serial extends SerialException
         if ($this->autoflush === true) {
             $this->flushBuffer();
 
-            $this->addLog(new SerialLog('Wait for reply...'));
+            $this->addLog(new SerialLog('Wait for reply '.round($message->getWaitForReply()/1000, 2).'s...'));
 
             usleep(intval(($message->getWaitForReply() * 1000)));
 
