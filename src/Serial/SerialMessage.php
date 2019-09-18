@@ -6,6 +6,7 @@ class SerialMessage
 {
     protected $callback = null;
     protected $content = null;
+    protected $synchronous = true;
     protected $waitForReply = 0.1;
 
     public function __construct($content)
@@ -33,6 +34,18 @@ class SerialMessage
     public function setContent(string $content): self
     {
         $this->content = $content;
+
+        return $this;
+    }
+
+    public function getSynchronous(): bool
+    {
+        return $this->synchronous;
+    }
+
+    public function setSynchronous(bool $synchronous): self
+    {
+        $this->synchronous = $synchronous;
 
         return $this;
     }

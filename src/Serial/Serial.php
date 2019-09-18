@@ -432,12 +432,12 @@ class Serial extends SerialException
      */
     protected function flushBuffer(): bool
     {
-        $start = \microtime(true);
-
         $this->addLog(new SerialLog('Flushing buffer...'));
 
-        if (!$this->isDeviceOpened()) {
-            throw new SerialException('Can\'t flush data: device not opened.');
+        $this->openDevice();
+
+        if (!$this->canWrite()) {
+            throw new SerialException('Device can\'t be written: not allowed.');
         }
 
         if (@fwrite($this->getDeviceHandle(), $this->buffer) === false) {
@@ -445,10 +445,6 @@ class Serial extends SerialException
         }
 
         $this->buffer = '';
-
-        if ($this->closeDevice()) {
-            $this->addLog(new SerialLog("Sent in ".$this->microtimeDiff($start).'s'));
-        }
 
         return true;
     }
@@ -583,24 +579,12 @@ class Serial extends SerialException
      */
     public function write(SerialMessage $message): self
     {
-        $this->addLog(new SerialLog('Writing to device...'));
+        $start = \microtime(true);
 
-        $this->openDevice();
+        $this->addLog(new SerialLog('Writing...'));
 
         if ($this->isDeviceNotSet()) {
             throw new SerialException('Device can\t be written: not set.');
-        }
-
-        if ($this->isDeviceClosed()) {
-            throw new SerialException('Device is closed.');
-        }
-
-        if (!$this->isDeviceOpened()) {
-            throw new SerialException('Device can\'t be written: not opened.');
-        }
-
-        if (!$this->canWrite()) {
-            throw new SerialException('Device can\'t be written: not allowed.');
         }
 
         $this->buffer.= $message->getContent();
@@ -610,6 +594,10 @@ class Serial extends SerialException
 
             $this->addLog(new SerialLog('Wait for reply '.round($message->getWaitForReply()/1000, 2).'s...'));
 
+            if ($message->getSynchronous() and $this->closeDevice()) {
+                $this->addLog(new SerialLog("Sent in ".$this->microtimeDiff($start).'s'));
+            }
+
             usleep(intval(($message->getWaitForReply() * 1000)));
 
             if (\is_callable($message->getCallback())) {
@@ -618,6 +606,8 @@ class Serial extends SerialException
                 \call_user_func($message->getCallback());
             }
         }
+
+        $this->closeDevice();
 
         return $this;
     }
