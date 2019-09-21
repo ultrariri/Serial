@@ -9,13 +9,13 @@ use \Serial\SerialMessage;
 
 class SerialExample
 {
-    protected $serial;
+    public $serial;
 
     public function __construct()
     {
         try {
-            $this->serial = (new Serial('/dev/ttyUSB0', '4800', '8/N/1'))
-                ->setVerboseCallback([$this, 'logs']);
+            $this->serial = (new Serial('/dev/ttyUSB0', '9600', '8/N/1'))
+                ->setVerboseCallback([$this, 'cbLogs']);
 
             $this->sendHelloWorld();
             $this->sendThisFile();
@@ -27,41 +27,34 @@ class SerialExample
 
     public function sendHelloWorld()
     {
-        $message = (new SerialMessage('Hello Worl!'))
-            ->setCallback([$this, 'HWSent'])
-            ->setWaitForReply(2000);
+        $message = (new SerialMessage('Hello World!'))
+            ->setCallback([$this, 'cbSendHelloWorld'], 1000);
 
-        $this->getSerial()->write($message);
+        $this->serial->write($message);
     }
 
     public function sendThisFile()
     {
         $message = (new SerialMessage(file_get_contents(__FILE__)))
-            ->setCallback([$this, 'FileSent'])
-            ->setWaitForReply(2000);
+            ->setCallback([$this, 'cbSendThisFile']);
 
-        $this->getSerial()->write($message);
+        $this->serial->write($message);
     }
 
-    public function getSerial(): Serial
+    public function cbLogs(SerialLog $log)
     {
-        return $this->serial;
+        printf("\t%s\t\t%s%s", $log->getLevelName(), $log->getMessage(), PHP_EOL);
+
     }
 
-    public function HWSent()
+    public function cbSendHelloWorld()
     {
         echo 'Hello World sent...'.PHP_EOL;
     }
 
-    public function FileSent()
+    public function cbSendThisFile()
     {
         echo 'File sent...'.PHP_EOL;
-    }
-
-    public function logs(SerialLog $log)
-    {
-        printf("\t%s\t\t%s%s", $log->getLevelName(), $log->getMessage(), PHP_EOL);
-
     }
 
 }

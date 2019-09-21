@@ -156,11 +156,23 @@ class Serial extends SerialException
         return $returnLogs;
     }
 
+    /**
+     * Get function to send log to
+     *
+     * @param callable $callback Function
+     * @return callable|null
+     */
     public function getVerboseCallback(callable $callback = null): ?callable
     {
         return $this->verboseCallback;
     }
 
+    /**
+     * Set function to send log to
+     *
+     * @param callable $callback Function
+     * @return callable|null
+     */
     public function setVerboseCallback(callable $callback = null): self
     {
         $this->verboseCallback = $callback;
@@ -373,7 +385,7 @@ class Serial extends SerialException
      * @param float $stopBits Length of a stop bit
      * @return bool
      */
-    function setStopBits(float $stopBits): self
+    public function setStopBits(float $stopBits): self
     {
         if ($this->isDeviceOpened()) {
             throw new SerialException('Device already opened, unable to change stop bits.');
@@ -391,11 +403,17 @@ class Serial extends SerialException
         return $this;
     }
 
-    public function getReadLength(): int
+    protected function getReadLength(): int
     {
         return $this->readLength;
     }
 
+    /**
+     * Set buffer read length
+     *
+     * @param integer $readLength Length
+     * @return void
+     */
     public function setReadLength(int $readLength = 128)
     {
         $this->readLength = $readLength;
@@ -411,7 +429,7 @@ class Serial extends SerialException
     }
 
     /**
-     * Get the wrapper
+     * Get the platform wrapper
      *
      * @return Wrapper|null
      */
@@ -425,11 +443,6 @@ class Serial extends SerialException
         return round(\microtime(true)-$from, 2);
     }
 
-    /**
-     * Flush the buffer
-     *
-     * @return self
-     */
     protected function flushBuffer(): bool
     {
         $this->addLog(new SerialLog('Flushing buffer...'));
@@ -505,7 +518,7 @@ class Serial extends SerialException
             return true;
         }
 
-        $this->addLog(new SerialLog('Closing device...'));
+        $this->addLog(new SerialLog('Wait for freeing device...'));
 
         if (@fclose($this->getDeviceHandle()) === false) {
             return false;
@@ -531,10 +544,6 @@ class Serial extends SerialException
         $this->addLog(new SerialLog("Reading {$length} bytes..."));
 
         $this->openDevice();
-
-        if ($this->isDeviceNotSet()) {
-            throw new SerialException('Device can\t be read: not set.');
-        }
 
         if ($this->isDeviceClosed()) {
             throw new SerialException('Device is closed.');
@@ -592,24 +601,38 @@ class Serial extends SerialException
         if ($this->autoflush === true) {
             $this->flushBuffer();
 
-            $this->addLog(new SerialLog('Wait for reply '.round($message->getWaitForReply()/1000, 2).'s...'));
-
-            if ($message->getSynchronous() and $this->closeDevice()) {
-                $this->addLog(new SerialLog("Sent in ".$this->microtimeDiff($start).'s'));
+            if (!$message->isSynchronous()) {
+                $this->writeCallback($message);
             }
 
-            usleep(intval(($message->getWaitForReply() * 1000)));
+            $this->closeDevice();
+            $this->addLog(new SerialLog("Sent in ".$this->microtimeDiff($start).'s'));
 
-            if (\is_callable($message->getCallback())) {
-                $this->addLog(new SerialLog('Calling write callback function: '.$message->getCallback()[1].'()'));
-
-                \call_user_func($message->getCallback());
+            if ($message->isSynchronous()) {
+                $this->writeCallback($message);
             }
         }
 
         $this->closeDevice();
 
         return $this;
+    }
+
+    protected function writeCallback(SerialMessage $message)
+    {
+        if (!\is_callable($message->getCallback())) {
+            return true;
+        }
+
+        if ($message->getWaitForCallback() > 0) {
+            $this->addLog(new SerialLog('Wait before write callback '.round($message->getWaitForCallback()/1000, 2).'s...'));
+
+            usleep(intval(($message->getWaitForCallback() * 1000)));
+        }
+
+        $this->addLog(new SerialLog('Calling write callback function: '.$message->getCallback()[1].'()'));
+
+        \call_user_func($message->getCallback());
     }
 
 }
