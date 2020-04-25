@@ -54,7 +54,7 @@ class WindowsWrapper extends Wrapper
             ." BAUD={$this->getSpeed()}"
             ." PARITY={$this->parityValues[$this->getParity()]}"
             ." DATA={$this->getData()}"
-            ." STOP={$this->getStopBit()}"
+            ." STOP={$this->getStopBits()}"
             ." {$this->handshakeValues[$this->getHandshake()]}";
 
         if ($this->shellExec($cmd, [$this, 'setOpenError']) !== 0) {
